@@ -1,7 +1,5 @@
 use std::ops::{Index, IndexMut};
 
-use rand::prelude::*;
-
 const MEMORY_SIZE: usize = 4096;
 const FONTSET_BASE_ADDRESS: u16 = 0x50;
 const FONTSET: [u8; 80] = [
@@ -178,7 +176,7 @@ impl Registers {
 
     fn clone_from_slice(&mut self, slice: &[u8]) {
         assert!(
-            slice.len() < 16,
+            slice.len() <= 16,
             "Cannot clone into registers from slice {:?}. It has too many entries",
             slice
         );
@@ -291,7 +289,7 @@ impl CPU {
 
             // 3XKK: Skip next instruction if VX is equal to KK.
             0x3000 => {
-                let register = opcode & 0x0F00;
+                let register = (opcode & 0x0F00) >> 8;
                 let value = (opcode & 0x00FF) as u8;
 
                 if self.v[register] == value {
@@ -303,7 +301,7 @@ impl CPU {
 
             // 4XKK: Skip next instruction if VX is not equal to KK.
             0x4000 => {
-                let register = opcode & 0x0F00;
+                let register = (opcode & 0x0F00) >> 8;
                 let value = (opcode & 0x00FF) as u8;
 
                 if self.v[register] != value {
@@ -315,8 +313,8 @@ impl CPU {
 
             // 5XY0: Skip next instruction if VX is equal to VY.
             0x5000 => {
-                let lhs_register = opcode & 0x0F00;
-                let rhs_register = opcode & 0x00F0;
+                let lhs_register = (opcode & 0x0F00) >> 8;
+                let rhs_register = (opcode & 0x00F0) >> 4;
 
                 if self.v[lhs_register] == self.v[rhs_register] {
                     current_pc + 2
@@ -327,7 +325,7 @@ impl CPU {
 
             // 6XNN: Set VX to NN.
             0x6000 => {
-                let register = opcode & 0x0F00;
+                let register = (opcode & 0x0F00) >> 8;
                 let value = (opcode & 0x00FF) as u8;
 
                 self.v[register] = value;
@@ -337,7 +335,7 @@ impl CPU {
 
             // 7XNN: Add NN to VX, carry flag is not changed.
             0x7000 => {
-                let register = opcode & 0x0F00;
+                let register = (opcode & 0x0F00) >> 8;
                 let value = (opcode & 0x00FF) as u8;
 
                 self.v[register] = self.v[register].wrapping_add(value);
@@ -346,8 +344,8 @@ impl CPU {
             }
 
             0x8000 => {
-                let lhs_register = opcode & 0x0F00;
-                let rhs_register = opcode & 0x00F0;
+                let lhs_register = (opcode & 0x0F00) >> 8;
+                let rhs_register = (opcode & 0x00F0) >> 4;
 
                 match opcode & 0x000F {
                     // 8XY0: Set VX to the value of VY.
@@ -418,7 +416,7 @@ impl CPU {
                         self.v[0xF] = self.v[lhs_register] & 0b1000_0000;
                         self.v[lhs_register] = self.v[lhs_register] << 1;
                     }
-                    _ => panic!("Unknown opcode {:#02x}", self.opcode),
+                    _ => panic!("Unknown opcode {:#02x}", opcode),
                 }
 
                 current_pc + 2
@@ -426,8 +424,8 @@ impl CPU {
 
             // 9XY0: Skip the next instruction if VX is not equal VY
             0x9000 => {
-                let lhs_register = self.opcode & 0x0F00;
-                let rhs_register = self.opcode & 0x00F0;
+                let lhs_register = (opcode & 0x0F00) >> 8;
+                let rhs_register = (opcode & 0x00F0) >> 4;
 
                 if self.v[lhs_register] != self.v[rhs_register] {
                     current_pc + 2
@@ -438,14 +436,14 @@ impl CPU {
 
             // ANNN: Set `I` to address NNN
             0xA000 => {
-                self.i = self.opcode & 0x0FFF;
+                self.i = opcode & 0x0FFF;
 
                 current_pc + 2
             }
 
             // BNNN: Jump to the address NNN + V0
             0xB000 => {
-                let address = self.opcode & 0x0FFF;
+                let address = opcode & 0x0FFF;
 
                 address + self.v[0] as u16
             }
@@ -453,18 +451,19 @@ impl CPU {
             // CXNN: Set the VX to the result of rand() & NN.
             0xC000 => {
                 let random: u8 = rand::random();
-                let value = (self.opcode & 0x00FF) as u8;
+                let target_register = (opcode & 0x0F00) >> 8;
+                let value = ((opcode & 0x00FF) >> 8) as u8;
 
-                self.v[self.opcode & 0x0F00] = random & value;
+                self.v[target_register] = random & value;
 
                 current_pc + 2
             }
 
             // DXYN: Draw a sprite at VX, VY of widht 8 and height N.
             0xD000 => {
-                let x = self.v[self.opcode & 0x0F00];
-                let y = self.v[self.opcode & 0x00F0];
-                let n = self.v[self.opcode & 0x000F];
+                let x = self.v[(opcode & 0x0F00) >> 8];
+                let y = self.v[(opcode & 0x00F0) >> 4];
+                let n = self.v[opcode & 0x000F];
 
                 self.v[0xF] = if self.display.draw_sprite(x, y, self.i, n) {
                     1
@@ -476,9 +475,9 @@ impl CPU {
             }
 
             0xE000 => {
-                let register_value = self.v[self.opcode & 0x0F00];
+                let register_value = self.v[(opcode & 0x0F00) >> 8];
 
-                match self.opcode & 0x00FF {
+                match opcode & 0x00FF {
                     // EX9E: Skip the next instruction if the key stored in VX is pressed
                     0x009E => {
                         if self.input.is_key_down(register_value) {
@@ -496,13 +495,13 @@ impl CPU {
                             current_pc + 4
                         }
                     }
-                    _ => panic!("Unknown opcode {:#02x}", self.opcode),
+                    _ => panic!("Unknown opcode {:#02x}", opcode),
                 }
             }
 
             0xF000 => {
-                let register = self.opcode & 0x0F00;
-                match self.opcode & 0x00FF {
+                let register = (opcode & 0x0F00) >> 8;
+                match opcode & 0x00FF {
                     // FX07: Set the VX value to the value of the delay timer
                     0x0007 => {
                         self.v[register] = self.delay_timer.current_value();
@@ -553,12 +552,12 @@ impl CPU {
                             .clone_from_slice(self.memory.as_slice(self.i, register + 1));
                     }
 
-                    _ => panic!("Unknown opcode {:#02x}", self.opcode),
+                    _ => panic!("Unknown opcode {:#02x}", opcode),
                 }
 
                 current_pc + 2
             }
-            _ => panic!("Unknown opcode {:#02x}", self.opcode),
+            _ => panic!("Unknown opcode {:#02x}", opcode),
         };
 
         self.delay_timer.tick();
@@ -634,5 +633,27 @@ mod test {
         let pc = cpu.execute_opcode(0x00E0, cpu.pc);
 
         assert_eq!(pc, 0x202);
+    }
+
+    #[test]
+    fn test_load_registers_into_memory() {
+        let mut cpu = make_test_cpu();
+        let data: Vec<u8> = (0..16).into_iter().map(|i| i * 2).collect();
+        cpu.v.clone_from_slice(&data);
+
+        let pc = cpu.execute_opcode(0xFF55, cpu.pc);
+
+        assert_eq!(cpu.memory.as_slice(cpu.i, 16), data.as_slice());
+    }
+
+    #[test]
+    fn test_load_memory_into_registers() {
+        let mut cpu = make_test_cpu();
+        let data: Vec<u8> = (0..16).into_iter().map(|i| i * 2).collect();
+        cpu.memory.clone_from_slice(cpu.i, &data);
+
+        let pc = cpu.execute_opcode(0xFF65, cpu.pc);
+
+        assert_eq!(cpu.v.as_slice_through(15), data.as_slice());
     }
 }
