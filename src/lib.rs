@@ -18,30 +18,29 @@ const FONTSET: [u8; 80] = [
     0xF0, 0x80, 0x80, 0x80, 0xF0, // C
     0xE0, 0x90, 0x90, 0x90, 0xE0, // D
     0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
-    0xF0, 0x80, 0xF0, 0x80, 0x80, // Fu
+    0xF0, 0x80, 0xF0, 0x80, 0x80, // F
 ];
 
-struct Memory {
+pub struct Memory {
     memory: [u8; MEMORY_SIZE],
 }
 
 impl Memory {
     fn new() -> Self {
         let mut memory = [0; MEMORY_SIZE];
-        memory[(FONTSET_BASE_ADDRESS as usize)..0xA0].clone_from_slice(&FONTSET);
+        memory[(FONTSET_BASE_ADDRESS as usize)..(FONTSET_BASE_ADDRESS as usize + FONTSET.len())]
+            .copy_from_slice(&FONTSET);
 
-        Self {
-            memory: [0; MEMORY_SIZE],
-        }
+        Self { memory: memory }
     }
 
     fn font_address_for_character(&self, character: u8) -> u16 {
         FONTSET_BASE_ADDRESS + (character as u16 * 5)
     }
 
-    fn clone_from_slice(&mut self, base_address: u16, slice: &[u8]) {
+    pub fn copy_from_slice(&mut self, base_address: u16, slice: &[u8]) {
         self.memory[(base_address as usize)..(base_address as usize + slice.len())]
-            .clone_from_slice(slice);
+            .copy_from_slice(slice);
     }
 
     fn as_slice(&self, base_address: u16, length: u16) -> &[u8] {
@@ -115,52 +114,119 @@ impl Default for Timer {
     }
 }
 
-trait Input {
+pub trait Input {
     fn is_key_down(&self, key: u8) -> bool;
-    fn await_key(&self) -> u8;
+    fn last_key_down(&self) -> Option<u8>;
 }
 
-trait Display {
-    fn draw_sprite(&mut self, x: u8, y: u8, base_address: u16, bytes_to_read: u8) -> bool;
+pub trait Display {
+    fn is_dirty(&self) -> bool;
+    fn clear_dirty(&mut self);
+    fn rgba_framebuffer(&self) -> Vec<u32>;
+    fn draw_sprite(
+        &mut self,
+        x: u8,
+        y: u8,
+        base_address: u16,
+        bytes_to_read: u8,
+        memory: &Memory,
+    ) -> bool;
     fn cls(&mut self);
 }
 
-struct NOPDisplay {}
-impl Default for NOPDisplay {
+const FRAME_BUFFER_PIXEL_WIDTH: usize = 64;
+const FRAME_BUFFER_PIXEL_HEIGHT: usize = 32;
+
+pub struct FramebufferDisplay {
+    framebuffer: [u8; FRAME_BUFFER_PIXEL_WIDTH * FRAME_BUFFER_PIXEL_HEIGHT],
+    dirty: bool,
+}
+
+impl Default for FramebufferDisplay {
     fn default() -> Self {
-        Self {}
+        Self {
+            framebuffer: [0; FRAME_BUFFER_PIXEL_WIDTH * FRAME_BUFFER_PIXEL_HEIGHT],
+            dirty: true,
+        }
     }
 }
 
-impl Display for NOPDisplay {
-    fn draw_sprite(&mut self, x: u8, y: u8, base_address: u16, bytes_to_read: u8) -> bool {
-        // Do nothing
-        true
+impl Display for FramebufferDisplay {
+    fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+
+    fn clear_dirty(&mut self) {
+        self.dirty = false;
+    }
+
+    fn rgba_framebuffer(&self) -> Vec<u32> {
+        self.framebuffer
+            .iter()
+            .map(|&byte| {
+                assert!(
+                    byte == 1 || byte == 0,
+                    "Invalid byte {} in framebuffer",
+                    byte
+                );
+                if byte == 1 {
+                    0x00_68_BB_ED
+                } else {
+                    0x002C_50_66
+                }
+            })
+            .collect()
     }
 
     fn cls(&mut self) {
-        // NOP
+        self.framebuffer = [0; FRAME_BUFFER_PIXEL_WIDTH * FRAME_BUFFER_PIXEL_HEIGHT];
+        self.dirty = true;
+    }
+
+    fn draw_sprite(
+        &mut self,
+        x: u8,
+        y: u8,
+        base_address: u16,
+        bytes_to_read: u8,
+        memory: &Memory,
+    ) -> bool {
+        self.dirty = true;
+        let height = bytes_to_read;
+        let sprites = memory.as_slice(base_address, height as u16);
+
+        sprites
+            .iter()
+            .enumerate()
+            .fold(false, |did_collide, (y_offset, sprite)| {
+                let y_norm = (y + y_offset as u8) % FRAME_BUFFER_PIXEL_HEIGHT as u8;
+                let inner_collide =
+                    (0..8_u8)
+                        .into_iter()
+                        .fold(false, |did_collide_inner, x_bit| {
+                            let x_norm = (x + x_bit as u8) % FRAME_BUFFER_PIXEL_WIDTH as u8;
+                            let sprite_pixel = ((sprite << x_bit) & 0x80) >> 7;
+
+                            let buffer_index = (y_norm as usize * FRAME_BUFFER_PIXEL_WIDTH
+                                + x_norm as usize)
+                                as usize;
+                            let previous_display_value = self.framebuffer[buffer_index];
+
+                            assert!(sprite_pixel == 0x1 || sprite_pixel == 0);
+                            self.framebuffer[buffer_index] = previous_display_value ^ sprite_pixel;
+                            if sprite_pixel > 0 {
+                                did_collide_inner || previous_display_value == 1
+                            } else {
+                                did_collide_inner
+                            }
+                        });
+
+                did_collide || inner_collide
+            })
     }
 }
 
-struct NOPInput {}
-
-impl Default for NOPInput {
-    fn default() -> Self {
-        Self {}
-    }
-}
-
-impl Input for NOPInput {
-    fn is_key_down(&self, key: u8) -> bool {
-        false
-    }
-
-    fn await_key(&self) -> u8 {
-        loop {}
-    }
-}
-
+#[derive(Debug)]
 struct Registers([u8; 16]);
 
 impl Registers {
@@ -180,7 +246,7 @@ impl Registers {
             "Cannot clone into registers from slice {:?}. It has too many entries",
             slice
         );
-        self.0.clone_from_slice(slice)
+        self.0[0..slice.len()].copy_from_slice(slice)
     }
 }
 
@@ -208,8 +274,8 @@ impl Default for Registers {
     }
 }
 
-const STACK_SIZE: usize = 16;
-struct CPU {
+const STACK_SIZE: usize = 128;
+pub struct CPU {
     // Registers
     v: Registers,
     i: u16,
@@ -220,19 +286,18 @@ struct CPU {
     opcode: u16,
 
     // Stack
-    stack: [u16; 16],
+    stack: [u16; STACK_SIZE],
     sp: u16,
 
     memory: Memory,
-    display: Box<dyn Display>,
-    input: Box<dyn Input>,
+    pub display: Box<dyn Display>,
 
     delay_timer: Timer,
     sound_timer: Timer,
 }
 
 impl CPU {
-    fn new(memory: Memory, display: Box<dyn Display>, input: Box<dyn Input>) -> Self {
+    pub fn new(memory: Memory, display: Box<dyn Display>) -> Self {
         Self {
             v: Registers::default(),
             i: 0,
@@ -245,20 +310,27 @@ impl CPU {
 
             memory,
             display,
-            input,
 
             delay_timer: Timer::default(),
             sound_timer: Timer::default(),
         }
     }
 
-    fn cycle(&mut self) {
+    pub fn cycle(&mut self, tick_timers: bool, input: &dyn Input) {
         self.opcode =
             (self.memory[self.pc] as u16) << 8 | self.memory[self.pc.wrapping_add(1)] as u16;
-        self.pc = self.execute_opcode(self.opcode, self.pc);
+        self.pc = self.execute_opcode(self.opcode, self.pc, tick_timers, input);
     }
 
-    fn execute_opcode(&mut self, opcode: u16, current_pc: u16) -> u16 {
+    fn execute_opcode(
+        &mut self,
+        opcode: u16,
+        current_pc: u16,
+        tick_timers: bool,
+        input: &dyn Input,
+    ) -> u16 {
+        self.display.clear_dirty();
+        // println!("{:04x}: {:04x}", current_pc, opcode);
         let next_pc = match opcode & 0xF000 {
             0x0000 => {
                 match opcode & 0x000F {
@@ -269,10 +341,7 @@ impl CPU {
                         current_pc + 2
                     }
                     // 00EE: Return from subroutine
-                    0x000E => {
-                        let return_to = self.stack_pop() + 2;
-                        return_to
-                    }
+                    0x000E => self.stack_pop(),
                     _ => panic!("Unknown opcode {:#02x}", opcode),
                 }
             }
@@ -280,8 +349,11 @@ impl CPU {
             0x1000 => opcode & 0x0FFF,
             // 2NNN: Call NNN
             0x2000 => {
-                let address = opcode & 0x0FFF;
-                self.stack_push(current_pc);
+                let mut address = opcode & 0x0FFF;
+                if address < 0x200 {
+                    address += 0x200;
+                }
+                self.stack_push(current_pc + 2);
 
                 // Jump to address
                 address
@@ -293,9 +365,9 @@ impl CPU {
                 let value = (opcode & 0x00FF) as u8;
 
                 if self.v[register] == value {
-                    current_pc + 2
-                } else {
                     current_pc + 4
+                } else {
+                    current_pc + 2
                 }
             }
 
@@ -305,9 +377,9 @@ impl CPU {
                 let value = (opcode & 0x00FF) as u8;
 
                 if self.v[register] != value {
-                    current_pc + 2
-                } else {
                     current_pc + 4
+                } else {
+                    current_pc + 2
                 }
             }
 
@@ -317,9 +389,9 @@ impl CPU {
                 let rhs_register = (opcode & 0x00F0) >> 4;
 
                 if self.v[lhs_register] == self.v[rhs_register] {
-                    current_pc + 2
-                } else {
                     current_pc + 4
+                } else {
+                    current_pc + 2
                 }
             }
 
@@ -413,7 +485,7 @@ impl CPU {
                     // 8XYE: Store the most significant bit of VX in VF and then shift VX to the
                     // left by 1.
                     0x000E => {
-                        self.v[0xF] = self.v[lhs_register] & 0b1000_0000;
+                        self.v[0xF] = (self.v[lhs_register] & 0x80) >> 7;
                         self.v[lhs_register] = self.v[lhs_register] << 1;
                     }
                     _ => panic!("Unknown opcode {:#02x}", opcode),
@@ -428,9 +500,9 @@ impl CPU {
                 let rhs_register = (opcode & 0x00F0) >> 4;
 
                 if self.v[lhs_register] != self.v[rhs_register] {
-                    current_pc + 2
-                } else {
                     current_pc + 4
+                } else {
+                    current_pc + 2
                 }
             }
 
@@ -451,21 +523,23 @@ impl CPU {
             // CXNN: Set the VX to the result of rand() & NN.
             0xC000 => {
                 let random: u8 = rand::random();
+                let mask = (opcode & 0x00FF) as u8;
                 let target_register = (opcode & 0x0F00) >> 8;
-                let value = ((opcode & 0x00FF) >> 8) as u8;
+                let value = mask & random;
 
-                self.v[target_register] = random & value;
+                self.v[target_register] = value;
 
                 current_pc + 2
             }
 
             // DXYN: Draw a sprite at VX, VY of widht 8 and height N.
             0xD000 => {
+                // println!("{:04x}", opcode);
                 let x = self.v[(opcode & 0x0F00) >> 8];
                 let y = self.v[(opcode & 0x00F0) >> 4];
-                let n = self.v[opcode & 0x000F];
+                let n = (opcode & 0x000F) as u8;
 
-                self.v[0xF] = if self.display.draw_sprite(x, y, self.i, n) {
+                self.v[0xF] = if self.display.draw_sprite(x, y, self.i, n, &self.memory) {
                     1
                 } else {
                     0
@@ -480,7 +554,7 @@ impl CPU {
                 match opcode & 0x00FF {
                     // EX9E: Skip the next instruction if the key stored in VX is pressed
                     0x009E => {
-                        if self.input.is_key_down(register_value) {
+                        if input.is_key_down(register_value) {
                             current_pc + 4
                         } else {
                             current_pc + 2
@@ -489,7 +563,7 @@ impl CPU {
 
                     // EXA1: Skip the next instruction if the key stored in VX isn't pressed
                     0x00A1 => {
-                        if self.input.is_key_down(register_value) {
+                        if input.is_key_down(register_value) {
                             current_pc + 2
                         } else {
                             current_pc + 4
@@ -501,34 +575,49 @@ impl CPU {
 
             0xF000 => {
                 let register = (opcode & 0x0F00) >> 8;
-                match opcode & 0x00FF {
+                let blocked = match opcode & 0x00FF {
                     // FX07: Set the VX value to the value of the delay timer
                     0x0007 => {
                         self.v[register] = self.delay_timer.current_value();
-                    }
-                    // FX0A: Block execution until a key is pressed. Pressed key is stored in VX.
-                    0x000A => {
-                        self.v[register] = self.input.await_key();
+
+                        false
                     }
 
+                    // FX0A: Block execution until a key is pressed. Pressed key is stored in VX.
+                    0x000A => match input.last_key_down() {
+                        Some(key) => {
+                            self.v[register] = key;
+                            false
+                        }
+                        None => true,
+                    },
+
                     // FX15: Set the delay timer to the value of VX
-                    0x0005 => {
+                    0x0015 => {
                         self.delay_timer.set_value(self.v[register]);
+
+                        false
                     }
 
                     // FX18: Set the sound timer to the value of VX
-                    0x0008 => {
+                    0x0018 => {
                         self.sound_timer.set_value(self.v[register]);
+
+                        false
                     }
 
                     // FX1E: Add VX to I
-                    0x000E => {
+                    0x001E => {
                         self.i = self.i.wrapping_add(self.v[register] as u16);
+
+                        false
                     }
 
                     // FX29: Set I to the location of the sprite for the character in VX.
-                    0x0009 => {
+                    0x0029 => {
                         self.i = self.memory.font_address_for_character(self.v[register]);
+
+                        false
                     }
 
                     // FX33:  Store BCD representation of Vx in memory locations I, I+1, and I+2.
@@ -538,30 +627,42 @@ impl CPU {
                         self.memory[self.i] = value / 100;
                         self.memory[self.i + 1] = (value / 10) % 10;
                         self.memory[self.i + 2] = (value % 100) % 10;
+
+                        false
                     }
 
                     // FX55: Store registers V0 through VX in memory starting at I.
                     0x0055 => {
                         self.memory
-                            .clone_from_slice(self.i, self.v.as_slice_through(register));
+                            .copy_from_slice(self.i, self.v.as_slice_through(register));
+
+                        false
                     }
 
                     // FX65: Read into register v0 through VX starting at I.
                     0x0065 => {
                         self.v
                             .clone_from_slice(self.memory.as_slice(self.i, register + 1));
+
+                        false
                     }
 
                     _ => panic!("Unknown opcode {:#02x}", opcode),
-                }
+                };
 
-                current_pc + 2
+                if !blocked {
+                    current_pc + 2
+                } else {
+                    current_pc
+                }
             }
             _ => panic!("Unknown opcode {:#02x}", opcode),
         };
 
-        self.delay_timer.tick();
-        self.sound_timer.tick();
+        if tick_timers {
+            self.delay_timer.tick();
+            self.sound_timer.tick();
+        }
 
         next_pc
     }
@@ -581,79 +682,5 @@ impl CPU {
         self.sp -= 1;
 
         value
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::{Display, Input, Memory, NOPInput, Timer, CPU};
-    struct DisplayStub {
-        clear_calls: usize,
-    }
-
-    impl Display for DisplayStub {
-        fn cls(&mut self) {
-            self.clear_calls += 1;
-        }
-
-        fn draw_sprite(&mut self, x: u8, y: u8, base_address: u16, bytes_to_read: u8) -> bool {
-            // TODO
-
-            true
-        }
-    }
-
-    impl Default for DisplayStub {
-        fn default() -> Self {
-            Self { clear_calls: 0 }
-        }
-    }
-
-    fn make_test_cpu() -> CPU {
-        CPU::new(
-            Memory::default(),
-            Box::new(DisplayStub::default()),
-            Box::new(NOPInput::default()),
-        )
-    }
-
-    #[test]
-    fn test_jump() {
-        let mut cpu = make_test_cpu();
-
-        let pc = cpu.execute_opcode(0x1FED, cpu.pc);
-
-        assert_eq!(pc, 0x0FED);
-    }
-
-    #[test]
-    fn test_cls() {
-        let mut cpu = make_test_cpu();
-
-        let pc = cpu.execute_opcode(0x00E0, cpu.pc);
-
-        assert_eq!(pc, 0x202);
-    }
-
-    #[test]
-    fn test_load_registers_into_memory() {
-        let mut cpu = make_test_cpu();
-        let data: Vec<u8> = (0..16).into_iter().map(|i| i * 2).collect();
-        cpu.v.clone_from_slice(&data);
-
-        let pc = cpu.execute_opcode(0xFF55, cpu.pc);
-
-        assert_eq!(cpu.memory.as_slice(cpu.i, 16), data.as_slice());
-    }
-
-    #[test]
-    fn test_load_memory_into_registers() {
-        let mut cpu = make_test_cpu();
-        let data: Vec<u8> = (0..16).into_iter().map(|i| i * 2).collect();
-        cpu.memory.clone_from_slice(cpu.i, &data);
-
-        let pc = cpu.execute_opcode(0xFF65, cpu.pc);
-
-        assert_eq!(cpu.v.as_slice_through(15), data.as_slice());
     }
 }
