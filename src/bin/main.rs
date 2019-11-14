@@ -1,3 +1,5 @@
+use chip_8;
+
 use chip_8::{FramebufferDisplay, Input, Memory, CPU};
 use clap::{crate_authors, crate_version, App, Arg};
 use minifb::{Key, Scale, Window, WindowOptions};

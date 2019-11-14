@@ -1,84 +1,7 @@
 use std::ops::{Index, IndexMut};
 
-const MEMORY_SIZE: usize = 4096;
-const FONTSET_BASE_ADDRESS: u16 = 0x50;
-const FONTSET: [u8; 80] = [
-    0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
-    0x20, 0x60, 0x20, 0x20, 0x70, // 1
-    0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
-    0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
-    0x90, 0x90, 0xF0, 0x10, 0x10, // 4
-    0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
-    0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
-    0xF0, 0x10, 0x20, 0x40, 0x40, // 7
-    0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
-    0xF0, 0x90, 0xF0, 0x10, 0xF0, // 9
-    0xF0, 0x90, 0xF0, 0x90, 0x90, // A
-    0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
-    0xF0, 0x80, 0x80, 0x80, 0xF0, // C
-    0xE0, 0x90, 0x90, 0x90, 0xE0, // D
-    0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
-    0xF0, 0x80, 0xF0, 0x80, 0x80, // F
-];
-
-pub struct Memory {
-    memory: [u8; MEMORY_SIZE],
-}
-
-impl Memory {
-    fn new() -> Self {
-        let mut memory = [0; MEMORY_SIZE];
-        memory[(FONTSET_BASE_ADDRESS as usize)..(FONTSET_BASE_ADDRESS as usize + FONTSET.len())]
-            .copy_from_slice(&FONTSET);
-
-        Self { memory: memory }
-    }
-
-    fn font_address_for_character(&self, character: u8) -> u16 {
-        FONTSET_BASE_ADDRESS + (character as u16 * 5)
-    }
-
-    pub fn copy_from_slice(&mut self, base_address: u16, slice: &[u8]) {
-        self.memory[(base_address as usize)..(base_address as usize + slice.len())]
-            .copy_from_slice(slice);
-    }
-
-    fn as_slice(&self, base_address: u16, length: u16) -> &[u8] {
-        &self.memory[base_address as usize..(base_address as usize + length as usize)]
-    }
-}
-
-impl Default for Memory {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Index<u16> for Memory {
-    type Output = u8;
-
-    fn index(&self, address: u16) -> &Self::Output {
-        assert!(
-            address < MEMORY_SIZE as u16,
-            "Invalid memory address {:#02x}",
-            address
-        );
-
-        &self.memory[address as usize]
-    }
-}
-
-impl IndexMut<u16> for Memory {
-    fn index_mut(&mut self, address: u16) -> &mut Self::Output {
-        assert!(
-            address < MEMORY_SIZE as u16,
-            "Invalid memory address {:#02x}",
-            address
-        );
-
-        &mut self.memory[address as usize]
-    }
-}
+mod memory;
+pub use memory::Memory;
 
 struct Timer {
     value: u8,
@@ -136,7 +59,6 @@ pub trait Display {
 
 const FRAME_BUFFER_PIXEL_WIDTH: usize = 64;
 const FRAME_BUFFER_PIXEL_HEIGHT: usize = 32;
-
 pub struct FramebufferDisplay {
     framebuffer: [u8; FRAME_BUFFER_PIXEL_WIDTH * FRAME_BUFFER_PIXEL_HEIGHT],
     dirty: bool,
