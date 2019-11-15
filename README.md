@@ -42,3 +42,9 @@ The CHIP-8 keyboard is mapped as follows
 ![](images/pong.png)
 
 > Pong
+
+## License
+
+It's MIT yo!
+
+See [LICENSE](LICENSE)
