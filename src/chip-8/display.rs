@@ -35,9 +35,9 @@ impl Display for FramebufferDisplay {
                     byte
                 );
                 if byte == 1 {
-                    0x00_68_BB_ED
+                    0x00_FF_FF_FF
                 } else {
-                    0x002C_50_66
+                    0x00_00_00_00
                 }
             })
             .collect()

@@ -138,7 +138,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let display = FramebufferDisplay::default();
     let mut cpu = CPU::new(memory, Box::new(display));
 
-    // dbg!(MICROS_BETWEEN_CYCLES);
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let delta = last_instant.elapsed();
         let timer_delta = last_timer_tick.elapsed();
@@ -162,7 +161,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         if cpu.display.is_dirty() {
-            let buffer = cpu.display.rgba_framebuffer();
+            let buffer = cpu
+                .display
+                .rgba_framebuffer()
+                .into_iter()
+                .map(|value| {
+                    if value == 0x0 {
+                        0x002C_50_66
+                    } else {
+                        0x00_68_BB_ED
+                    }
+                })
+                .collect::<Vec<u32>>();
 
             window.update_with_buffer(&buffer)?;
         }
