@@ -1,11 +1,11 @@
 mod cpu;
 mod display;
+mod emulator;
 mod memory;
 mod timer;
 
-pub use cpu::CPU;
 pub use display::FramebufferDisplay;
-pub use memory::Memory;
+pub use emulator::Emulator;
 
 pub trait Input {
     fn is_key_down(&self, key: u8) -> bool;
@@ -35,7 +35,7 @@ pub trait Display {
         y: u8,
         base_address: u16,
         bytes_to_read: u8,
-        memory: &Memory,
+        memory: &memory::Memory,
     ) -> bool;
 
     /// Clear the screen by setting all pixels back to 0.

@@ -1,8 +1,8 @@
 use chip_8;
 
-use chip_8::{FramebufferDisplay, Input, Memory, CPU};
+use chip_8::{Emulator, FramebufferDisplay, Input};
 use clap::{crate_authors, crate_version, App, Arg};
-use minifb::{Key, Scale, Window, WindowOptions};
+use minifb::{Key, KeyRepeat, Scale, Window, WindowOptions};
 
 use std::fs::File;
 use std::io::Read;
@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 const MICROS_BETWEEN_CYCLES: u128 = 1000_000 / 1000;
 const MICROS_BETWEEN_TIMER_TICKS: u128 = 1000_000 / 60;
+const MICROS_BETWEEN_DISPLAY_REFRESH: u128 = 1000_000 / 60;
 
 struct MiniFBInput {
     key_states: [bool; 16],
@@ -110,6 +111,15 @@ fn load_rom(path: &Path) -> std::io::Result<Vec<u8>> {
     Ok(buffer)
 }
 
+fn create_window() -> Result<Window, Box<dyn std::error::Error>> {
+    let mut opts = WindowOptions::default();
+
+    opts.scale = Scale::X16;
+    let window = Window::new("CHIP-8", 64, 32, opts)?;
+
+    Ok(window)
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let matches = App::new("CHIP-8")
         .version(crate_version!())
@@ -125,20 +135,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut last_instant = Instant::now();
     let mut last_timer_tick = Instant::now();
-    let mut memory = Memory::default();
+    let mut last_redraw = Instant::now();
     let rom = load_rom(Path::new(matches.value_of("ROM").unwrap()))?;
-    memory.copy_from_slice(0x200, &rom);
 
-    let mut opts = WindowOptions::default();
-
-    opts.scale = Scale::X16;
-    let mut window = Window::new("CHIP-8", 64, 32, opts)?;
-
+    let mut window = create_window()?;
     let mut input = MiniFBInput::new();
     let display = FramebufferDisplay::default();
-    let mut cpu = CPU::new(memory, Box::new(display));
+    let mut emulator = Emulator::new(Box::new(display), rom);
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
+        if window.is_key_pressed(Key::F1, KeyRepeat::No) && !emulator.is_initial_state() {
+            emulator = emulator.reset();
+            last_instant = Instant::now();
+            last_timer_tick = Instant::now();
+            last_redraw = Instant::now();
+            continue;
+        }
+
         let delta = last_instant.elapsed();
         let timer_delta = last_timer_tick.elapsed();
 
@@ -152,17 +165,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         if delta.as_micros() >= MICROS_BETWEEN_CYCLES {
             if should_tick_timer {
-                window.update();
                 input.update_key_state(&window);
             }
 
-            cpu.cycle(should_tick_timer, &input);
+            emulator.cycle(should_tick_timer, &input);
             last_instant = Instant::now();
         }
 
-        if cpu.display.is_dirty() {
-            let buffer = cpu
-                .display
+        if emulator.display().is_dirty()
+            && last_redraw.elapsed().as_micros() >= MICROS_BETWEEN_DISPLAY_REFRESH
+        {
+            let buffer = emulator
+                .display()
                 .rgba_framebuffer()
                 .into_iter()
                 .map(|value| {
@@ -179,7 +193,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         if delta.as_micros() < MICROS_BETWEEN_CYCLES {
             let ms_to_sleep = (MICROS_BETWEEN_CYCLES - delta.as_micros()) / 1000;
-            std::thread::sleep(Duration::from_millis(ms_to_sleep as u64));
+            if ms_to_sleep > 0 {
+                // std::thread::sleep(Duration::from_millis(ms_to_sleep as u64));
+            }
         }
     }
 

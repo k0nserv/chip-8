@@ -1,4 +1,5 @@
-use super::{Display, Memory};
+use super::memory::Memory;
+use super::Display;
 
 const FRAME_BUFFER_PIXEL_WIDTH: usize = 64;
 const FRAME_BUFFER_PIXEL_HEIGHT: usize = 32;

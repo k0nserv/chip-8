@@ -1,7 +1,8 @@
 use std::ops::{Index, IndexMut};
 
-use super::{Display, Input, Memory};
-use crate::timer::Timer;
+use super::memory::Memory;
+use super::timer::Timer;
+use super::{Display, Input};
 
 #[derive(Debug)]
 struct Registers([u8; 16]);
