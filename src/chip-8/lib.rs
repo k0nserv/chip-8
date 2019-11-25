@@ -41,3 +41,5 @@ pub trait Display {
     /// Clear the screen by setting all pixels back to 0.
     fn cls(&mut self);
 }
+
+pub type RandomNumberProvider = dyn FnMut() -> u8;

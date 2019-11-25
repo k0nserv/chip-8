@@ -1,6 +1,6 @@
 use crate::cpu::CPU;
 use crate::memory::Memory;
-use crate::{Display, Input};
+use crate::{Display, Input, RandomNumberProvider};
 
 pub struct Emulator {
     cpu: CPU,
@@ -9,10 +9,14 @@ pub struct Emulator {
 }
 
 impl Emulator {
-    pub fn new(display: Box<dyn Display>, rom: Vec<u8>) -> Self {
+    pub fn new(
+        display: Box<dyn Display>,
+        rom: Vec<u8>,
+        random_number_provider: Box<RandomNumberProvider>,
+    ) -> Self {
         let mut memory = Memory::default();
         memory.copy_from_slice(0x200, &rom);
-        let cpu = CPU::new(memory, display);
+        let cpu = CPU::new(memory, display, random_number_provider);
 
         Self {
             cpu,
@@ -28,8 +32,7 @@ impl Emulator {
     pub fn reset(self) -> Self {
         let mut memory = Memory::default();
         memory.copy_from_slice(0x200, &self.current_rom);
-        let mut cpu = CPU::new(memory, self.cpu.display);
-        cpu.display.cls();
+        let mut cpu = self.cpu.reset(memory);
 
         Self {
             cpu,

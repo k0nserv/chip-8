@@ -141,7 +141,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut window = create_window()?;
     let mut input = MiniFBInput::new();
     let display = FramebufferDisplay::default();
-    let mut emulator = Emulator::new(Box::new(display), rom);
+    let mut emulator = Emulator::new(Box::new(display), rom, Box::new(rand::random));
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         if window.is_key_pressed(Key::F1, KeyRepeat::No) && !emulator.is_initial_state() {

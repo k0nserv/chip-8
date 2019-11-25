@@ -2,7 +2,7 @@ use std::ops::{Index, IndexMut};
 
 use super::memory::Memory;
 use super::timer::Timer;
-use super::{Display, Input};
+use super::{Display, Input, RandomNumberProvider};
 
 #[derive(Debug)]
 struct Registers([u8; 16]);
@@ -72,10 +72,15 @@ pub struct CPU {
 
     delay_timer: Timer,
     sound_timer: Timer,
+    random_number_provider: Box<RandomNumberProvider>,
 }
 
 impl CPU {
-    pub fn new(memory: Memory, display: Box<dyn Display>) -> Self {
+    pub fn new(
+        memory: Memory,
+        display: Box<dyn Display>,
+        random_number_provider: Box<RandomNumberProvider>,
+    ) -> Self {
         Self {
             v: Registers::default(),
             i: 0,
@@ -91,7 +96,13 @@ impl CPU {
 
             delay_timer: Timer::default(),
             sound_timer: Timer::default(),
+            random_number_provider,
         }
+    }
+
+    pub fn reset(mut self, memory: Memory) -> Self {
+        self.display.cls();
+        Self::new(memory, self.display, self.random_number_provider)
     }
 
     pub fn cycle(&mut self, tick_timers: bool, input: &dyn Input) {
@@ -300,7 +311,7 @@ impl CPU {
 
             // CXNN: Set the VX to the result of rand() & NN.
             0xC000 => {
-                let random: u8 = rand::random();
+                let random: u8 = (self.random_number_provider)();
                 let mask = (opcode & 0x00FF) as u8;
                 let target_register = (opcode & 0x0F00) >> 8;
                 let value = mask & random;
