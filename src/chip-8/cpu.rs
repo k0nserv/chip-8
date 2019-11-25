@@ -205,17 +205,17 @@ impl CPU {
 
                     // 8XY1: Set VX to the result of VX | VY
                     0x0001 => {
-                        self.v[lhs_register] = self.v[lhs_register] | self.v[rhs_register];
+                        self.v[lhs_register] |= self.v[rhs_register];
                     }
 
                     // 8XY2: Set VX to the result of VX & VY
                     0x0002 => {
-                        self.v[lhs_register] = self.v[lhs_register] & self.v[rhs_register];
+                        self.v[lhs_register] &= self.v[rhs_register];
                     }
 
                     // 8XY3: Set VX to the result of VX ^ VY
                     0x0003 => {
-                        self.v[lhs_register] = self.v[lhs_register] ^ self.v[rhs_register];
+                        self.v[lhs_register] ^= self.v[rhs_register];
                     }
 
                     // 8XY4: Add VY to VX. VF is set to 1 if there is a carry, 0 if not.
@@ -245,7 +245,7 @@ impl CPU {
                     // right by 1.
                     0x0006 => {
                         self.v[0xF] = self.v[lhs_register] & 0x1;
-                        self.v[lhs_register] = self.v[lhs_register] >> 1;
+                        self.v[lhs_register] >>= 1;
                     }
 
                     // 8XY7: Set VX to the result of VY - VX. VF is set 0 when there is a borrow, 1
@@ -264,7 +264,7 @@ impl CPU {
                     // left by 1.
                     0x000E => {
                         self.v[0xF] = (self.v[lhs_register] & 0x80) >> 7;
-                        self.v[lhs_register] = self.v[lhs_register] << 1;
+                        self.v[lhs_register] <<= 1;
                     }
                     _ => panic!("Unknown opcode {:#02x}", opcode),
                 }

@@ -40,7 +40,7 @@ impl Memory {
         memory[(FONTSET_BASE_ADDRESS as usize)..(FONTSET_BASE_ADDRESS as usize + FONTSET.len())]
             .copy_from_slice(&FONTSET);
 
-        Self { memory: memory }
+        Self { memory }
     }
 
     pub fn font_address_for_character(&self, character: u8) -> u16 {

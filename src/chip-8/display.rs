@@ -66,26 +66,22 @@ impl Display for FramebufferDisplay {
             .enumerate()
             .fold(false, |did_collide, (y_offset, sprite)| {
                 let y_norm = (y + y_offset as u8) % FRAME_BUFFER_PIXEL_HEIGHT as u8;
-                let inner_collide =
-                    (0..8_u8)
-                        .into_iter()
-                        .fold(false, |did_collide_inner, x_bit| {
-                            let x_norm = (x + x_bit as u8) % FRAME_BUFFER_PIXEL_WIDTH as u8;
-                            let sprite_pixel = ((sprite << x_bit) & 0x80) >> 7;
+                let inner_collide = (0..8_u8).fold(false, |did_collide_inner, x_bit| {
+                    let x_norm = (x + x_bit as u8) % FRAME_BUFFER_PIXEL_WIDTH as u8;
+                    let sprite_pixel = ((sprite << x_bit) & 0x80) >> 7;
 
-                            let buffer_index = (y_norm as usize * FRAME_BUFFER_PIXEL_WIDTH
-                                + x_norm as usize)
-                                as usize;
-                            let previous_display_value = self.framebuffer[buffer_index];
+                    let buffer_index =
+                        (y_norm as usize * FRAME_BUFFER_PIXEL_WIDTH + x_norm as usize) as usize;
+                    let previous_display_value = self.framebuffer[buffer_index];
 
-                            assert!(sprite_pixel == 0x1 || sprite_pixel == 0);
-                            self.framebuffer[buffer_index] = previous_display_value ^ sprite_pixel;
-                            if sprite_pixel > 0 {
-                                did_collide_inner || previous_display_value == 1
-                            } else {
-                                did_collide_inner
-                            }
-                        });
+                    assert!(sprite_pixel == 0x1 || sprite_pixel == 0);
+                    self.framebuffer[buffer_index] = previous_display_value ^ sprite_pixel;
+                    if sprite_pixel > 0 {
+                        did_collide_inner || previous_display_value == 1
+                    } else {
+                        did_collide_inner
+                    }
+                });
 
                 did_collide || inner_collide
             })

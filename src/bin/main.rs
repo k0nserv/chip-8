@@ -9,9 +9,9 @@ use std::io::Read;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-const MICROS_BETWEEN_CYCLES: u128 = 1000_000 / 1000;
-const MICROS_BETWEEN_TIMER_TICKS: u128 = 1000_000 / 60;
-const MICROS_BETWEEN_DISPLAY_REFRESH: u128 = 1000_000 / 60;
+const MICROS_BETWEEN_CYCLES: u128 = 1_000_000 / 1000;
+const MICROS_BETWEEN_TIMER_TICKS: u128 = 1_000_000 / 60;
+const MICROS_BETWEEN_DISPLAY_REFRESH: u128 = 1_000_000 / 60;
 
 struct MiniFBInput {
     key_states: [bool; 16],
@@ -37,7 +37,7 @@ impl MiniFBInput {
             .get_keys()
             .map(|keys| {
                 keys.iter()
-                    .filter_map(|key_enum| MiniFBInput::map_key_enum(key_enum))
+                    .filter_map(|&key_enum| MiniFBInput::map_key_enum(key_enum))
                     .nth(0)
             })
             .unwrap_or(None);
@@ -68,7 +68,7 @@ impl MiniFBInput {
         }
     }
 
-    fn map_key_enum(key: &Key) -> Option<u8> {
+    fn map_key_enum(key: Key) -> Option<u8> {
         match key {
             Key::Key1 => Some(0x1),
             Key::Key2 => Some(0x2),
@@ -181,9 +181,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .into_iter()
                 .map(|value| {
                     if value == 0x0 {
-                        0x002C_50_66
+                        0x002C_5066
                     } else {
-                        0x00_68_BB_ED
+                        0x0068_BBED
                     }
                 })
                 .collect::<Vec<u32>>();
@@ -194,7 +194,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if delta.as_micros() < MICROS_BETWEEN_CYCLES {
             let ms_to_sleep = (MICROS_BETWEEN_CYCLES - delta.as_micros()) / 1000;
             if ms_to_sleep > 0 {
-                // std::thread::sleep(Duration::from_millis(ms_to_sleep as u64));
+                std::thread::sleep(Duration::from_millis(ms_to_sleep as u64));
             }
         }
     }
